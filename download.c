@@ -31,6 +31,9 @@
 #define USER_PASS_HOST_REGEX "ftp://%[^:]:%[^@]@%[^/]/%s"
 #define HOST_REGEX "ftp://%[^/]/%s"
 
+#define ASCII_ZERO 48
+#define ASCII_NINE 57
+
 /*
 
 1. Parse FTP URL -> ftp://user:password@host/path/to/file
@@ -60,6 +63,13 @@ typedef struct {
     char file_name[MAX_SIZE];
     char ip_address[16];
 } ConnectionSettings;
+
+typedef enum {
+    READING_CODE,       // state of receive code
+    READING_MESSAGE,    // state of receive message
+    MULTILINE_RESPONSE, // state of receive multiline response
+    DONE
+} State;
 
 /***
     url format: ftp://[<user>:<password>@]<host>/<url-path>
@@ -124,7 +134,7 @@ int parseURL(const char *url, ConnectionSettings *settings) {
     Creates and connects a socket to the specified IP address and port.
     Returns the socket file descriptor if successful, -1 otherwise.
  */
-int connectSocket(const char* ip_address, const int port) {
+int connectToServer(const char* ip_address, const int port) {
     int sockfd;
     struct sockaddr_in serv_addr;
 
@@ -148,83 +158,98 @@ int connectSocket(const char* ip_address, const int port) {
         return -1;
     }
 
-    return sockfd;
-}
-/*
-enum State {
-
+    return sockfd; // Return the socket file descriptor
 }
 
+
+/***
+    Reads the response from the server and extracts the response code and message.
+    Returns 0 if successful, -1 otherwise.
+ */
 int readResponse(const int socket, char *buffer, int *code) {
-    
+    if (buffer == NULL || code == NULL) {
+        printf("ERROR: Invalid buffer or code\n");
+        return -1;
+    }
+
+    State state = READING_CODE;
+    *code = 0;
+    int index = 0;
+    int pre_code = 0;
+    ssize_t read_bytes;
+
+    while (state != DONE) {
+        char byte = 0;
+        read_bytes = read(socket, &byte, 1);
+        if (read_bytes < 0) {
+            perror("ERROR: Could not read byte from socket");
+            return -1;
+        } else if (read_bytes == 0) {
+            state = DONE;
+            break;
+        }
+
+        switch (state) {
+            case READING_CODE:
+                if (byte >= '0' && byte <= '9') {
+                    *code = *code * 10 + (byte - '0');
+                } else if (byte == ' ') {
+                    state = READING_MESSAGE;
+                } else if (byte == '-') {
+                    state = MULTILINE_RESPONSE;
+                }
+                break;
+            case READING_MESSAGE:
+                if (byte == '\n') {
+                    state = DONE;
+                    buffer[index] = '\0';
+                } else {
+                    buffer[index++] = byte;
+                }
+                break;
+            case MULTILINE_RESPONSE:
+                if (byte == '\n') {
+                    state = READING_CODE;
+                    if (pre_code != 0 && pre_code != *code) {
+                        printf("ERROR: Inconsistent response code\n");
+                        return -1;
+                    }
+                    pre_code = *code;
+                    *code = 0;
+                }
+                buffer[index++] = byte;
+                break;
+            default:
+                state = READING_CODE;
+                break;
+        }
+    }
+
+    return 0;
 }
 
 int connectFTP(const int socket, const char *user, const char *password) {
     char *buffer = (char *)malloc(MAX_RESPONSE);
     int response = 0;
 
-    
-    
-    char buffer[MAX_RESPONSE];
-    int bytes;
-
-    // Read welcome message from server
-    bytes = read(socket, buffer, MAX_RESPONSE - 1);
-    if (bytes < 0) {
-        perror("ERROR reading from socket");
-        return -1;
-    }
-    buffer[bytes] = '\0';
-    printf("%s", buffer);
-
-    // Send USER command
-    sprintf(buffer, "USER %s\r\n", user);
-    bytes = write(socket, buffer, strlen(buffer));
-    if (bytes < 0) {
-        perror("ERROR writing to socket");
+    if (readResponse(socket, buffer, &response) != 0) {
+        printf("ERROR: Could not read response from server\n");
+        free(buffer);
+        buffer = NULL;
         return -1;
     }
 
-    // Read response from server
-    bytes = read(socket, buffer, MAX_RESPONSE - 1);
-    if (bytes < 0) {
-        perror("ERROR reading from socket");
-        return -1;
-    }
-    buffer[bytes] = '\0';
-    printf("%s", buffer);
-
-    // Check for successful USER command response (typically 331)
-    if (strncmp(buffer, "331", 3) != 0) {
-        fprintf(stderr, "ERROR: USER command failed\n");
+    if (response != 220) {
+        printf("ERROR: Expected response code 220, received %d\n", response);
+        free(buffer);
+        buffer = NULL;
         return -1;
     }
 
-    // Send PASS command
-    sprintf(buffer, "PASS %s\r\n", password);
-    bytes = write(socket, buffer, strlen(buffer));
-    if (bytes < 0) {
-        perror("ERROR writing to socket");
-        return -1;
-    }
-
-    // Read response from server
-    bytes = read(socket, buffer, MAX_RESPONSE - 1);
-    if (bytes < 0) {
-        perror("ERROR reading from socket");
-        return -1;
-    }
-    buffer[bytes] = '\0';
-    printf("%s", buffer);
-
-    // Check for successful PASS command response (typically 230)
-    if (strncmp(buffer, "230", 3) != 0) {
-        fprintf(stderr, "ERROR: PASS command failed\n");
-        return -1;
-    }
-
+    free(buffer);
+    buffer = NULL;
     return 0;
-} */
+} 
 
 int main() {
     ConnectionSettings settings;
@@ -247,10 +272,17 @@ int main() {
             printf("     File Name: %s\n", settings.file_name);
 
             // Create socket and connect to the server
-            int sockfd = connectSocket(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
+            int sockfd = connectToServer(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
             if (sockfd >= 0) {
                 printf("Successfully connected to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
-
+                
+                // Perform FTP login
+                if (connectFTP(sockfd, settings.user, settings.password) == 0) {
+                    printf("Successfully logged in to FTP server\n");
+                } else {
+                    printf("Failed to log in to FTP server\n");
+                }
+                
                 close(sockfd); // Close the socket after use
             } else {
                 printf("Failed to connect to %s on port %d\n", settings.ip_address, DEFAULT_PORT);

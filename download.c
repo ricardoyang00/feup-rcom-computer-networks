@@ -123,7 +123,11 @@ int parseURL(const char *url, struct connection_settings *settings) {
     return 0; 
 }
 
-int createSocket(const char* ip_address, const int port) {
+/***
+    Creates and connects a socket to the specified IP address and port.
+    Returns the socket file descriptor if successful, -1 otherwise.
+ */
+int connectSocket(const char* ip_address, const int port) {
     int sockfd;
     struct sockaddr_in serv_addr;
 
@@ -171,7 +175,7 @@ int main() {
             printf("      File Name: %s\n", settings.file_name);
 
             // Create socket and connect to the server
-            int sockfd = createSocket(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
+            int sockfd = connectSocket(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
             if (sockfd >= 0) {
                 printf("Successfully connected to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
                 close(sockfd); // Close the socket after use

@@ -51,7 +51,7 @@
 
 */
 
-struct connection_settings {
+typedef struct {
     char user[MAX_SIZE];
     char password[MAX_SIZE];
     char host[MAX_SIZE];
@@ -59,18 +59,15 @@ struct connection_settings {
     char url_path[MAX_SIZE];
     char file_name[MAX_SIZE];
     char ip_address[16];
-};
+} ConnectionSettings;
 
 /***
     url format: ftp://[<user>:<password>@]<host>/<url-path>
     The purpose of the function is to extract the user, password, host, and path from the URL.
  */
-int parseURL(const char *url, struct connection_settings *settings) {
+int parseURL(const char *url, ConnectionSettings *settings) {
     regex_t regex;
     int res;
-
-    // Initialize settings to avoid garbage values
-    memset(settings, 0, sizeof(struct connection_settings));
 
     // Compile regex to find '@' in the URL
     res = regcomp(&regex, "@", 0);
@@ -153,13 +150,88 @@ int connectSocket(const char* ip_address, const int port) {
 
     return sockfd;
 }
+/*
+enum State {
+
+}
+
+int readResponse(const int socket, char *buffer, int *code) {
+    
+}
+
+int connectFTP(const int socket, const char *user, const char *password) {
+    char *buffer = (char *)malloc(MAX_RESPONSE);
+    int response = 0;
+
+    
+    
+    char buffer[MAX_RESPONSE];
+    int bytes;
+
+    // Read welcome message from server
+    bytes = read(socket, buffer, MAX_RESPONSE - 1);
+    if (bytes < 0) {
+        perror("ERROR reading from socket");
+        return -1;
+    }
+    buffer[bytes] = '\0';
+    printf("%s", buffer);
+
+    // Send USER command
+    sprintf(buffer, "USER %s\r\n", user);
+    bytes = write(socket, buffer, strlen(buffer));
+    if (bytes < 0) {
+        perror("ERROR writing to socket");
+        return -1;
+    }
+
+    // Read response from server
+    bytes = read(socket, buffer, MAX_RESPONSE - 1);
+    if (bytes < 0) {
+        perror("ERROR reading from socket");
+        return -1;
+    }
+    buffer[bytes] = '\0';
+    printf("%s", buffer);
+
+    // Check for successful USER command response (typically 331)
+    if (strncmp(buffer, "331", 3) != 0) {
+        fprintf(stderr, "ERROR: USER command failed\n");
+        return -1;
+    }
+
+    // Send PASS command
+    sprintf(buffer, "PASS %s\r\n", password);
+    bytes = write(socket, buffer, strlen(buffer));
+    if (bytes < 0) {
+        perror("ERROR writing to socket");
+        return -1;
+    }
+
+    // Read response from server
+    bytes = read(socket, buffer, MAX_RESPONSE - 1);
+    if (bytes < 0) {
+        perror("ERROR reading from socket");
+        return -1;
+    }
+    buffer[bytes] = '\0';
+    printf("%s", buffer);
+
+    // Check for successful PASS command response (typically 230)
+    if (strncmp(buffer, "230", 3) != 0) {
+        fprintf(stderr, "ERROR: PASS command failed\n");
+        return -1;
+    }
+
+    return 0;
+} */
 
 int main() {
-    struct connection_settings settings;
+    ConnectionSettings settings;
     const char *urls[] = {
         "ftp://ftp.up.pt/pub/gnu/emacs/elisp-manual-21-2.8.tar.gz",
-        "ftp://demo:password@test.rebex.net/readme.txt",
-        "ftp://anonymous:anonymous@ftp.bit.nl/speedtest/100mb.bin",
+        /*"ftp://demo:password@test.rebex.net/readme.txt",
+        "ftp://anonymous:anonymous@ftp.bit.nl/speedtest/100mb.bin",*/
         NULL
     };
 
@@ -172,15 +244,16 @@ int main() {
             printf("     Host Name: %s\n", settings.host_name);
             printf("    IP Address: %s\n", settings.ip_address);
             printf("      URL Path: %s\n", settings.url_path);
-            printf("      File Name: %s\n", settings.file_name);
+            printf("     File Name: %s\n", settings.file_name);
 
             // Create socket and connect to the server
             int sockfd = connectSocket(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
             if (sockfd >= 0) {
                 printf("Successfully connected to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
+
                 close(sockfd); // Close the socket after use
             } else {
-                printf("Failed to connect to %s on port 21\n", settings.ip_address);
+                printf("Failed to connect to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
             }
         } else {
             printf("Failed to parse URL\n");

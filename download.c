@@ -120,7 +120,34 @@ int parseURL(const char *url, struct connection_settings *settings) {
         return -1;
     }
 
-    return 0; // Return 0 for success
+    return 0; 
+}
+
+int createSocket(const char* ip_address, const int port) {
+    int sockfd;
+    struct sockaddr_in serv_addr;
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("ERROR opening socket");
+        return -1;
+    }
+
+    // Set up server address
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(ip_address);
+    serv_addr.sin_port = htons(port);
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("ERROR connecting");
+        close(sockfd);
+        return -1;
+    }
+
+    return sockfd;
 }
 
 int main() {
@@ -141,7 +168,16 @@ int main() {
             printf("     Host Name: %s\n", settings.host_name);
             printf("    IP Address: %s\n", settings.ip_address);
             printf("      URL Path: %s\n", settings.url_path);
-            printf("     File Name: %s\n", settings.file_name);
+            printf("      File Name: %s\n", settings.file_name);
+
+            // Create socket and connect to the server
+            int sockfd = createSocket(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
+            if (sockfd >= 0) {
+                printf("Successfully connected to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
+                close(sockfd); // Close the socket after use
+            } else {
+                printf("Failed to connect to %s on port 21\n", settings.ip_address);
+            }
         } else {
             printf("Failed to parse URL\n");
         }

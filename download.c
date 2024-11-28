@@ -19,6 +19,9 @@
 
 #define MAX_RESPONSE 1024
 
+#define FTP_RESPONSE_220 220
+#define FTP_RESPONSE_227 227
+
 /*
 #define HOST_REGEX      "%*[^/]//%[^/]"
 #define HOST_AT_REGEX   "%*[^/]//%*[^@]@%[^/]"
@@ -30,6 +33,7 @@
 
 #define USER_PASS_HOST_REGEX "ftp://%[^:]:%[^@]@%[^/]/%s"
 #define HOST_REGEX "ftp://%[^/]/%s"
+#define PASSIVE_REGEX "Entering Passive Mode (%d,%d,%d,%d,%d,%d)"
 
 #define ASCII_ZERO 48
 #define ASCII_NINE 57
@@ -134,7 +138,7 @@ int parseURL(const char *url, ConnectionSettings *settings) {
     Creates and connects a socket to the specified IP address and port.
     Returns the socket file descriptor if successful, -1 otherwise.
  */
-int connectToServer(const char* ip_address, const int port) {
+int openConnection(const char* ip_address, const int port) {
     int sockfd;
     struct sockaddr_in serv_addr;
 
@@ -228,6 +232,7 @@ int readResponse(const int socket, char *buffer, int *code) {
     return 0;
 }
 
+// Function to connect to FTP server and read welcome message
 int connectFTP(const int socket, const char *user, const char *password) {
     char *buffer = (char *)malloc(MAX_RESPONSE);
     int response = 0;
@@ -239,24 +244,183 @@ int connectFTP(const int socket, const char *user, const char *password) {
         return -1;
     }
 
-    if (response != 220) {
-        printf("ERROR: Expected response code 220, received %d\n", response);
+    if (response != FTP_RESPONSE_220) {
+        printf("ERROR: Expected response code %d, received %d\n", FTP_RESPONSE_220, response);
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    // Send USER command
+    sprintf(buffer, "USER %s\r\n", user);
+    if (write(socket, buffer, strlen(buffer)) < 0) {
+        perror("ERROR writing to socket");
+        free(buffer);
+        return -1;
+    }
+
+    // Read response from server
+    if (readResponse(socket, buffer, &response) != 0) {
+        printf("ERROR: Could not read response from server\n");
+        free(buffer);
+        return -1;
+    }
+
+    // Check for successful USER command response (typically 331)
+    if (response != 331) {
+        printf("ERROR: Expected response code 331, received %d\n", response);
+        free(buffer);
+        return -1;
+    }
+
+    // Send PASS command
+    sprintf(buffer, "PASS %s\r\n", password);
+    if (write(socket, buffer, strlen(buffer)) < 0) {
+        perror("ERROR writing to socket");
+        free(buffer);
+        return -1;
+    }
+
+    // Read response from server
+    if (readResponse(socket, buffer, &response) != 0) {
+        printf("ERROR: Could not read response from server\n");
+        free(buffer);
+        return -1;
+    }
+
+    // Check for successful PASS command response (typically 230)
+    if (response != 230) {
+        printf("ERROR: Expected response code 230, received %d\n", response);
+        free(buffer);
+        return -1;
+    }
+
+    free(buffer);
+    return 0;
+}
+
+/***
+    Enter in passive mode to receive data from the server.
+ */
+int enterPassiveMode(const int socket, char *ip_address, int *port) {
+    char *buffer = (char *)malloc(MAX_RESPONSE);
+    int response = 0;
+
+    if (send(socket, "PASV\r\n", 6, 0) < 0) {
+        perror("ERROR: Could not send PASV command to server");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    if (readResponse(socket, buffer, &response) != 0) {
+        printf("ERROR: Could not read response from server\n");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    if (response != FTP_RESPONSE_227) {
+        printf("ERROR: Expected response code 227, received %d\n", response);
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    // Parse IP address and port from PASV response
+    int ip1, ip2, ip3, ip4, p1, p2;
+    if (sscanf(buffer, PASSIVE_REGEX, &ip1, &ip2, &ip3, &ip4, &p1, &p2) != 6) {
+        printf("ERROR: Could not parse PASV response\n");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    sprintf(ip_address, "%d.%d.%d.%d", ip1, ip2, ip3, ip4);
+    *port = p1 * 256 + p2;
+
+    free(buffer);
+    buffer = NULL;
+    return 0;
+}
+
+// Function to request a resource from the server
+int requestResource(const int socket, const char *resource) {
+    char *buffer = (char *)malloc(MAX_RESPONSE);
+    int response = 0;
+
+    sprintf(buffer, "RETR %s\r\n", resource);
+    if (write(socket, buffer, strlen(buffer)) < 0) {
+        perror("ERROR writing to socket");
+        free(buffer);
+        return -1;
+    }
+
+    if (readResponse(socket, buffer, &response) != 0) {
+        printf("ERROR: Could not read response from server\n");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    if (response != 150) {
+        printf("ERROR: Expected response code 150, received %d\n", response);
         free(buffer);
         buffer = NULL;
         return -1;
     }
 
     free(buffer);
-    buffer = NULL;
     return 0;
-} 
+}
+
+// Function to receive data from the server and save it to a file
+int receiveData(const int socket, const char *file_name) {
+    FILE *file = fopen(file_name, "wb");
+    if (file == NULL) {
+        perror("ERROR: Could not open file for writing");
+        return -1;
+    }
+
+    char *buffer = (char *)malloc(MAX_RESPONSE);
+    ssize_t read_bytes;
+
+    while ((read_bytes = read(socket, buffer, MAX_RESPONSE)) > 0) {
+        if (fwrite(buffer, 1, read_bytes, file) != read_bytes) {
+            perror("ERROR: Could not write to file");
+            free(buffer);
+            fclose(file);
+            return -1;
+        }
+    }
+
+    if (read_bytes < 0) {
+        perror("ERROR: Could not read from socket");
+        free(buffer);
+        fclose(file);
+        return -1;
+    }
+
+    free(buffer);
+    fclose(file);
+    return 0;
+}
+
+// Function to close the connection
+int closeConnection(const int socket) {
+    if (close(socket) < 0) {
+        perror("ERROR: Could not close socket");
+        return -1;
+    }
+    return 0;
+}
 
 int main() {
     ConnectionSettings settings;
     const char *urls[] = {
         "ftp://ftp.up.pt/pub/gnu/emacs/elisp-manual-21-2.8.tar.gz",
-        /*"ftp://demo:password@test.rebex.net/readme.txt",
-        "ftp://anonymous:anonymous@ftp.bit.nl/speedtest/100mb.bin",*/
+        "ftp://demo:password@test.rebex.net/readme.txt",
+        "ftp://anonymous:anonymous@ftp.bit.nl/speedtest/100mb.bin",
         NULL
     };
 
@@ -272,20 +436,54 @@ int main() {
             printf("     File Name: %s\n", settings.file_name);
 
             // Create socket and connect to the server
-            int sockfd = connectToServer(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
-            if (sockfd >= 0) {
+            int control_sockfd = openConnection(settings.ip_address, DEFAULT_PORT); // FTP typically uses port 21
+            if (control_sockfd < 0) {
+                printf("Failed to connect to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
+            } else {
                 printf("Successfully connected to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
                 
                 // Perform FTP login
-                if (connectFTP(sockfd, settings.user, settings.password) == 0) {
-                    printf("Successfully logged in to FTP server\n");
-                } else {
+                if (connectFTP(control_sockfd, settings.user, settings.password) != 0) {
                     printf("Failed to log in to FTP server\n");
+                } else {
+                    printf("Successfully logged in to FTP server\n");
+
+                    // Enter passive mode
+                    char data_ip[16];
+                    int data_port;
+                    if (enterPassiveMode(control_sockfd, data_ip, &data_port) == 0) {
+                        printf("Entered passive mode. Data connection IP: %s, Port: %d\n", data_ip, data_port);
+
+                        int data_sockfd = openConnection(data_ip, data_port);
+                        if (data_sockfd >= 0) {
+                            printf("Successfully connected to data connection\n");
+
+                            // Request resource from server
+                            if (requestResource(control_sockfd, settings.url_path) == 0) {
+                                printf("Successfully requested resource from server\n");
+
+                                // Receive data from server and save to file
+                                if (receiveData(data_sockfd, settings.file_name) == 0) {
+                                    printf("Successfully received data from server and saved to file\n");
+                                } else {
+                                    printf("Failed to receive data from server\n");
+                                }
+                            } else {
+                                printf("Failed to request resource from server\n");
+                            }
+                            if (closeConnection(data_sockfd) != 0) {
+                                printf("Failed to close data connection\n");
+                            }
+                        } else {
+                            printf("Failed to connect to data connection\n");
+                        }
+                    } else {
+                        printf("Failed to enter passive mode\n");
+                    }
                 }
-                
-                close(sockfd); // Close the socket after use
-            } else {
-                printf("Failed to connect to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
+            }
+            if (closeConnection(control_sockfd) != 0) {
+                printf("Failed to close control connection\n");
             }
         } else {
             printf("Failed to parse URL\n");

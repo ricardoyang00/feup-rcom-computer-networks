@@ -16,14 +16,17 @@
 #define HOST_REGEX "ftp://%[^/]/%s"
 #define PASSIVE_REGEX "Entering Passive Mode (%d,%d,%d,%d,%d,%d)"
 
+#define DOWNLOAD_PATH "downloads/"
+
 #define DEFAULT_USER "anonymous"
 #define DEFAULT_PASSWORD "anonymous"
 #define DEFAULT_PORT 21
 
-#define FTP_RESPONSE_220 220
-#define FTP_RESPONSE_227 227
-#define FTP_RESPONSE_230 230
-#define FTP_RESPONSE_331 331
+#define FTP_RESPONSE_150 150    // File status OK, about to open data connection
+#define FTP_RESPONSE_220 220    // Service ready for new user
+#define FTP_RESPONSE_227 227    // Entering Passive Mode
+#define FTP_RESPONSE_230 230    // User logged in, proceed
+#define FTP_RESPONSE_331 331    // User name OK, need password
 
 #define MAX_RESPONSE 1024
 #define MAX_SIZE 256

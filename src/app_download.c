@@ -141,6 +141,8 @@ int readResponse(const int socket, char *buffer, int *code) {
         }
     }
 
+    printf("[INFO] %d: %s\n\n", *code, buffer);
+
     return 0;
 }
 
@@ -283,7 +285,7 @@ int requestResource(const int socket, const char *resource) {
     }
 
     // File status OK, about to open data connection
-    if (response != FTP_RESPONSE_150) {
+    if (response != FTP_RESPONSE_150 && response != FTP_RESPONSE_125) {
         printf("[ERROR] Expected response code %d, received %d\n", FTP_RESPONSE_150, response);
         free(buffer);
         buffer = NULL;
@@ -295,7 +297,7 @@ int requestResource(const int socket, const char *resource) {
     return 0;
 }
 
-int receiveData(const int socket, const char *file_name) {
+int receiveData(const int control_socket, const int data_socket, const char *file_name) {
     char file_path[MAX_SIZE];
     snprintf(file_path, sizeof(file_path), "%s%s", DOWNLOAD_PATH, file_name);
 
@@ -308,7 +310,7 @@ int receiveData(const int socket, const char *file_name) {
     char *buffer = (char *)malloc(MAX_RESPONSE);
     ssize_t read_bytes;
 
-    while ((read_bytes = read(socket, buffer, MAX_RESPONSE)) > 0) {
+    while ((read_bytes = read(data_socket, buffer, MAX_RESPONSE)) > 0) {
         if (fwrite(buffer, 1, read_bytes, file) != read_bytes) {
             perror("[ERROR] Could not write to file");
             free(buffer);
@@ -326,16 +328,69 @@ int receiveData(const int socket, const char *file_name) {
         return -1;
     }
 
+    fclose(file);
+
+    memset(buffer, 0, MAX_RESPONSE);
+
+    // Read the response after file transfer is complete
+    int response = 0;
+    if (readResponse(control_socket, buffer, &response) != 0) {
+        printf("[ERROR] Could not read response from server\n");
+        free(buffer);
+        return -1;
+    }
+
+    // Check for successful file transfer response
+    if (response != FTP_RESPONSE_226) {
+        printf("[ERROR] Expected response code %d, received %d\n", FTP_RESPONSE_226, response);
+        free(buffer);
+        return -1;
+    }
+
     free(buffer);
     buffer = NULL;
-    fclose(file);
+
     return 0;
 }
 
-int closeConnection(const int socket) {
-    if (close(socket) < 0) {
-        perror("[ERROR] Could not close socket");
+int closeConnection(const int socketControl, const int socketData) {
+    char *buffer = (char *)malloc(MAX_RESPONSE);
+    int response = 0;
+    
+    sprintf(buffer, "QUIT \r\n");
+    if (write(socketControl, buffer, strlen(buffer)) < 0) {
+        perror("[ERROR] Could not write to socket");
+        free(buffer);
+        buffer = NULL;
         return -1;
     }
+
+    if (readResponse(socketControl, buffer, &response) != 0) {
+        printf("[ERROR] Could not read response from server\n");
+        free(buffer);
+        return -1;
+    }
+
+    if (response != FTP_RESPONSE_221) {
+        printf("[ERROR] Expected response code %d, received %d\n", FTP_RESPONSE_221, response);
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    if (close(socketControl) < 0) {
+        perror("[ERROR] Could not close control socket");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
+    if (socketData != -1 && close(socketData) < 0) {
+        perror("[ERROR] Could not close data socket");
+        free(buffer);
+        buffer = NULL;
+        return -1;
+    }
+
     return 0;
 }

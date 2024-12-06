@@ -92,6 +92,7 @@ int readResponse(const int socket, char *buffer, int *code) {
     *code = 0;
     int index = 0;
     ssize_t read_bytes;
+    int prev_code = 0;
 
     while (state != DONE) {
         char byte = 0;
@@ -129,19 +130,15 @@ int readResponse(const int socket, char *buffer, int *code) {
                 break;
             case MULTILINE_RESPONSE:
                 if (byte == '\n') {
-                    buffer[index++] = byte; 
-                    buffer[index] = '\0';  
-
-                    if (strncmp(buffer, "220 ", 4) == 0 || strncmp(buffer, "331 ", 4) == 0 || 
-                        strncmp(buffer, "226 ", 4) == 0 || strncmp(buffer, "125 ", 4) == 0 || 
-                        strncmp(buffer, "230 ", 4) == 0) {
-                        state = DONE;  
-                    } else {
-                        index = 0;
+                    state = READING_CODE;
+                    if (prev_code != 0 && prev_code != *code) {
+                        printf("[ERROR] Invalid multiline response\n");
+                        return -1;
                     }
-                } else {
-                    buffer[index++] = byte;
+                    prev_code = *code;
+                    *code = 0;
                 }
+                buffer[index++] = byte;
                 break;
             default:
                 printf("[ERROR] Invalid state\n");
@@ -158,21 +155,15 @@ int connectFTP(const int socket, const char *user, const char *password) {
     char *buffer = (char *)malloc(MAX_RESPONSE);
     int response = 0;
 
-    if (readResponse(socket, buffer, &response) != 0) {
-        printf("[ERROR] Could not read response from server\n");
-        free(buffer);
-        buffer = NULL;
-        return -1;
-    }
-
-    // Service ready for new user
-    if (response != FTP_RESPONSE_220) {
-        printf("[ERROR] Expected response code %d, received %d\n", FTP_RESPONSE_220, response);
-        free(buffer);
-        buffer = NULL;
-        return -1;
-    }
-
+    do {
+        if (readResponse(socket, buffer, &response) != 0) {
+            printf("[ERROR] Could not read response from server\n");
+            free(buffer);
+            buffer = NULL;
+            return -1;
+        }
+    } while (response != FTP_RESPONSE_220);
+ 
     // Send USER command
     sprintf(buffer, "USER %s\r\n", user);
     if (write(socket, buffer, strlen(buffer)) < 0) {

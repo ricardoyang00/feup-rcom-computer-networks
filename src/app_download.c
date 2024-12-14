@@ -147,7 +147,7 @@ int readResponse(const int socket, char *buffer, int *code) {
     }
 
     buffer[index] = '\0'; 
-    printf("[INFO] %d: %s\n", *code, buffer);
+    printf("[%d] %s\n", *code, buffer);
     return 0; 
 }
 
@@ -341,7 +341,7 @@ int receiveData(const int control_socket, const int data_socket, const char *fil
         return -1;
     }
 
-    if (response != FTP_RESPONSE_226 && response != FTP_RESPONSE_426) {
+    if (response != FTP_RESPONSE_226) {
         printf("[ERROR] Expected response code %d, received %d\n", FTP_RESPONSE_226, response);
         free(buffer);
         buffer = NULL;

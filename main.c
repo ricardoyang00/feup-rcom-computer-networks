@@ -4,7 +4,7 @@
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         printf("Usage: %s <argument>\n", argv[0]);
-        return 1;
+        exit(-1);
     }
 
     const char *argument = argv[1];
@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
     if (parseURL(argument, &settings) != 0) {
         printf("[ERROR] Could not parse URL\n");
         printf("URL format should be: ftp://[<user>:<password>@]<host>/<url-path>");
-        return 1;
+        exit(-1);
     }
 
     printf("Starting Download Application\n");
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
     int control_sockfd = openConnection(settings.ip_address, DEFAULT_PORT);
     if (control_sockfd < 0) {
         printf("[ERROR] Failed to connect to %s on port %d\n", settings.ip_address, DEFAULT_PORT);
-        return 1;
+        exit(-1);
     }
     printf("Successfully connected to %s on port %d\n\n", settings.ip_address, DEFAULT_PORT);
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     if (connectFTP(control_sockfd, settings.user, settings.password) != 0) {
         printf("[ERROR] Failed to log in to FTP server\n");
         closeConnection(control_sockfd, -1);
-        return 1;
+        exit(-1);
     }
     //printf("Successfully logged in to FTP server\n");
 
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     if (enterPassiveMode(control_sockfd, data_ip, &data_port) != 0) {
         printf("[ERROR] Failed to enter passive mode\n");
         closeConnection(control_sockfd, -1);
-        return 1;
+        exit(-1);
     }
     //printf("Entered passive mode. Data connection IP: %s, Port: %d\n", data_ip, data_port);
 
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     if (data_sockfd < 0) {
         printf("[ERROR] Failed to connect to data connection\n");
         closeConnection(control_sockfd, -1);
-        return 1;
+        exit(-1);
     }
     //printf("Successfully connected to data connection\n");
 
@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
     if (requestResource(control_sockfd, settings.url_path) != 0) {
         printf("[ERROR] Failed to request resource from server\n");
         closeConnection(control_sockfd, data_sockfd);
-        return 1;
+        exit(-1);
     }
     //printf("Successfully requested resource from server\n");
 
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     if (receiveData(control_sockfd, data_sockfd, settings.file_name) != 0) {
         printf("[ERROR] Failed to receive data from server\n");
         closeConnection(control_sockfd, data_sockfd);
-        return 1;
+        exit(-1);
     }
     //printf("Successfully received data from server and saved to \"%s%s\"\n", DOWNLOAD_PATH, settings.file_name);
     //printf("\nExiting...\n");
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
     // Close control and data connection
     if (closeConnection(control_sockfd, data_sockfd) != 0) {
         printf("[ERROR] Failed to close control/data connection\n");
-        return 1;
+        exit(-1);
     }
 
     //printf("\nGoodbye!\n");

@@ -22,15 +22,21 @@
 #define DEFAULT_PASSWORD "anonymous"
 #define DEFAULT_PORT 21
 
+#define FTP_RESPONSE_125 125    // Data connection already open; transfer starting
 #define FTP_RESPONSE_150 150    // File status OK, about to open data connection
 #define FTP_RESPONSE_220 220    // Service ready for new user
+#define FTP_RESPONSE_221 221    // Service closing control connection
+#define FTP_RESPONSE_226 226    // Closing data connection, file transfer successful
 #define FTP_RESPONSE_227 227    // Entering Passive Mode
 #define FTP_RESPONSE_230 230    // User logged in, proceed
 #define FTP_RESPONSE_331 331    // User name OK, need password
+#define FTP_RESPONSE_426 426    // Connection closed; transfer aborted
 
 #define MAX_RESPONSE 1024
 #define MAX_SIZE 256
 
+#define TRUE 1
+#define FALSE 0
 
 typedef struct {
     char user[MAX_SIZE];
@@ -69,9 +75,9 @@ int enterPassiveMode(const int socket, char *ip_address, int *port);
 int requestResource(const int socket, const char *resource);
 
 // Function to receive data from the server and save it to a file
-int receiveData(const int socket, const char *file_name);
+int receiveData(const int control_socket, const int data_socket, const char *file_name);
 
 // Function to close the connection
-int closeConnection(const int socket);
+int closeConnection(const int socketControl, const int socketData);
 
 #endif

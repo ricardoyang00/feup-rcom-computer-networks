@@ -6,14 +6,14 @@ Through this project, we gained a deeper understanding of network communication 
 
 
 ## Quick Start
-1. Insert the **ftp url** in the `URL` field on the [Makefile](Makefile).
+1. Insert the **FTP URL** in the `URL` field in the [Makefile](Makefile).
 
 2. To use the FTP download application, run the following command:
 ```bash
 make run
 ```
 
-3. After transfer, you can find the downloaded files in [downloads/](downloads/) folder.
+3. After the transfer, you can find the downloaded files in the [downloads/](downloads/) folder.
 
 
 ## Lab Computers Setup
